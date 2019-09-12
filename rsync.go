@@ -305,23 +305,6 @@ func (this *FileHashInfo) Open(hi *HashInfo) error {
 	return nil
 }
 
-func (this *FileHashInfo) read(off int64, size int, buf []byte) error {
-	if _, err := this.File.Seek(off, io.SeekStart); err != nil {
-		return err
-	}
-	l := size
-	p := 0
-	for l-p > 0 {
-		rl, err := this.File.Read(buf[p : p+l])
-		if err != nil {
-			return err
-		}
-		p += rl
-		l -= rl
-	}
-	return nil
-}
-
 func (this *FileHashInfo) Full() error {
 	if this.File == nil {
 		return errors.New("file not open")
@@ -358,21 +341,6 @@ func (this *FileHashInfo) Close() {
 		this.File.Close()
 		this.File = nil
 	}
-}
-
-func (this *FileHashInfo) ReadBlock(idx int) ([]byte, error) {
-	if idx < 0 || idx >= len(this.Blocks) {
-		return nil, errors.New("idx bound out")
-	}
-	b := this.Blocks[idx]
-	if b.Len == 0 {
-		return nil, errors.New("block len zero")
-	}
-	buf := make([]byte, b.Len)
-	if err := this.read(b.Off, int(b.Len), buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
 }
 
 func (this *FileHashInfo) String() string {
