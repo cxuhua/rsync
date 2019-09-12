@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"hash/adler32"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ const (
 )
 
 type HashBlock struct {
+	Idx int            //last block size
 	H1  uint16         //adler32 low  = (hash & 0xFFFF)
 	H2  uint16         //adler32 high = ((hash > 16) & 0xFFFF)
 	H3  [md5.Size]byte //md5 sum
@@ -25,8 +27,19 @@ type HashBlock struct {
 	Off int64          //block offset
 }
 
+func (this HashBlock) Clone() HashBlock {
+	ret := HashBlock{}
+	ret.Idx = this.Idx
+	ret.H1 = this.H1
+	ret.H2 = this.H2
+	copy(ret.H3[:], this.H3[:])
+	ret.Len = this.Len
+	ret.Off = this.Off
+	return ret
+}
+
 func (this HashBlock) String() string {
-	return fmt.Sprintf("H1=%.4X H2=%.4X H3=%s Len=%d Off=%d", this.H1, this.H2, hex.EncodeToString(this.H3[:]), this.Len, this.Off)
+	return fmt.Sprintf("IDX=%d H1=%.4X H2=%.4X H3=%s Len=%d Off=%d", this.Idx, this.H1, this.H2, hex.EncodeToString(this.H3[:]), this.Len, this.Off)
 }
 
 func HashBlockEqual(b1 HashBlock, b2 HashBlock) bool {
@@ -43,6 +56,7 @@ type HashInfo struct {
 	Blocks    []HashBlock //block info
 	MD5       []byte      //file md5
 	BlockSize int         //block size
+	FileSize  int64       //file size
 }
 
 func (this *HashInfo) PassH1(o int, h uint32) (int, bool) {
@@ -58,11 +72,12 @@ func (this *HashInfo) PassH1(o int, h uint32) (int, bool) {
 }
 
 func (this *HashInfo) PassH2(o int, h uint32) (int, bool) {
+	h1 := uint16(h & 0xFFFF)
 	h2 := uint16((h >> 16) & 0xFFFF)
 	l := len(this.Blocks)
 	for i := o; i < l; i++ {
 		v := this.Blocks[i]
-		if v.H2 == h2 {
+		if v.H1 == h1 && v.H2 == h2 {
 			return i, true
 		}
 	}
@@ -80,6 +95,49 @@ func (this *HashInfo) PassH3(o int, h [md5.Size]byte) (int, bool) {
 	return 0, false
 }
 
+type FileReader struct {
+	File *os.File
+	Size int
+	Buf  *bytes.Buffer
+	Hash hash.Hash
+}
+
+func (this *FileReader) Read(offset int64) ([]byte, error) {
+	one := []byte{0}
+	n, err := this.Buf.Read(one)
+	if err == nil && n == 1 {
+		return one, nil
+	}
+	if _, err := this.File.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, this.Size)
+	if num, err := this.File.Read(buf); err != nil {
+		return nil, err
+	} else if _, err := this.Buf.Write(buf[:num]); err != nil {
+		return nil, err
+	} else if _, err := this.Hash.Write(buf[:num]); err != nil {
+		return nil, err
+	}
+	n, err = this.Buf.Read(one)
+	if err == nil && n == 1 {
+		return one, nil
+	}
+	return nil, io.EOF
+}
+
+func NewFileReader(f *os.File, siz int) *FileReader {
+	if f == nil {
+		panic(errors.New("f nil"))
+	}
+	c := &FileReader{}
+	c.Hash = md5.New()
+	c.File = f
+	c.Buf = &bytes.Buffer{}
+	c.Size = siz
+	return c
+}
+
 type FileHashInfo struct {
 	Info      *HashInfo   //hash info from computer
 	Path      string      //file path
@@ -93,11 +151,15 @@ type FileHashInfo struct {
 
 func (this *FileHashInfo) GetHashInfo() *HashInfo {
 	ret := &HashInfo{
-		Blocks:    this.Blocks,
+		Blocks:    []HashBlock{},
 		MD5:       this.MD5,
 		BlockSize: this.BlockSize,
+		FileSize:  this.FileSize,
 	}
-	sort.SliceIsSorted(ret.Blocks, func(i, j int) bool {
+	for _, v := range this.Blocks {
+		ret.Blocks = append(ret.Blocks, v.Clone())
+	}
+	sort.Slice(ret.Blocks, func(i, j int) bool {
 		if ret.Blocks[i].H1 == ret.Blocks[j].H1 {
 			return ret.Blocks[i].H2 < ret.Blocks[j].H2
 		}
@@ -109,6 +171,7 @@ func (this *FileHashInfo) GetHashInfo() *HashInfo {
 const (
 	ComputerTypeData  = 1
 	ComputerTypeIndex = 2
+	ComputerTypeHash  = 3
 )
 
 type ComputerInfo struct {
@@ -117,6 +180,7 @@ type ComputerInfo struct {
 	Off      int64
 	Data     []byte // len > 0 has new data
 	Type     int    // &1  idx start, = &2 computer stop &4 = data
+	Hash     []byte
 }
 
 func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
@@ -126,8 +190,7 @@ func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
 	if this.File == nil {
 		return errors.New("file not open")
 	}
-	checkPass := func(buf []byte) int {
-		h12 := adler32.Checksum(buf)
+	checkPass := func(buf []byte, h12 uint32) int {
 		o, b := this.Info.PassH1(0, h12)
 		if !b {
 			return -1
@@ -141,63 +204,70 @@ func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
 		if !b {
 			return -3
 		}
-		return o
+		return this.Info.Blocks[o].Idx
 	}
-	var err error = nil
 	rbuf := bytes.NewBuffer(nil)
-	fbuf := make([]byte, this.BlockSize)
 	wbuf := bytes.NewBuffer(nil)
-	one := []byte{0}
-	rsiz := this.BlockSize
-	if this.FileSize < int64(rsiz) {
-		rsiz = int(this.FileSize)
-	}
+	adler := adler32.New()
+	file := NewFileReader(this.File, this.BlockSize)
 	for foff := int64(0); foff < this.FileSize; foff++ {
-		if (this.FileSize - foff) < int64(rsiz) {
-			rsiz = int(this.FileSize - foff)
-		}
-		if err := this.read(foff, rsiz, fbuf); err != nil {
+		if one, err := file.Read(foff); err != nil {
 			return err
-		}
-		foff += int64(rsiz - 1)
-		if _, err := rbuf.Write(fbuf[:rsiz]); err != nil {
+		} else if _, err := rbuf.Write(one); err != nil {
 			return err
-		}
-		idx := checkPass(rbuf.Bytes())
-		if idx >= 0 && wbuf.Len() > 0 {
+		} else if _, err := adler.Write(one); err != nil {
+			return err
+		} else if idx := checkPass(rbuf.Bytes(), adler.Sum32()); idx >= 0 {
+			adler.Reset()
 			info := &ComputerInfo{HashFile: this}
-			info.BlockIdx = -1
+			info.Type = ComputerTypeIndex
+			info.BlockIdx = idx
+			if wbuf.Len() > 0 {
+				info.Data = wbuf.Bytes()
+				info.Type |= ComputerTypeData
+			}
+			info.Off = foff - int64(wbuf.Len()+rbuf.Len()-1)
+			if err := fn(info); err != nil {
+				return err
+			}
+			wbuf.Reset()
+			rbuf.Reset()
+			continue
+		}
+		if rbuf.Len() >= this.BlockSize {
+			one := []byte{0}
+			adler.Reset()
+			if num, err := rbuf.Read(one); err != nil {
+				return err
+			} else if _, err := wbuf.Write(one[:num]); err != nil {
+				return err
+			}
+			foff -= int64(this.BlockSize - 1)
+			rbuf.Reset()
+		}
+		if wbuf.Len() >= this.BlockSize {
+			info := &ComputerInfo{HashFile: this}
 			info.Type = ComputerTypeData
 			info.Data = wbuf.Bytes()
-			info.Off = foff - int64(this.BlockSize+wbuf.Len()) + 1
-			err = fn(info)
-			if err != nil {
+			info.Off = foff - int64(wbuf.Len()-1)
+			if err := fn(info); err != nil {
 				return err
 			}
 			wbuf.Reset()
 		}
-		if idx >= 0 {
-			info := &ComputerInfo{HashFile: this}
-			info.BlockIdx = idx
-			info.Type = ComputerTypeIndex
-			info.Off = foff - int64(this.BlockSize) + 1
-			err = fn(info)
-			if err != nil {
-				return err
-			}
-			rbuf.Reset()
-			rsiz = this.BlockSize
-		} else {
-			if _, err := rbuf.Read(one); err != nil {
-				return err
-			}
-			if _, err := wbuf.Write(one); err != nil {
-				return err
-			}
-			rsiz = 1
-		}
 	}
-	return nil
+	if _, err := wbuf.Write(rbuf.Bytes()); err != nil {
+		return err
+	}
+	info := &ComputerInfo{HashFile: this}
+	info.Type = ComputerTypeHash
+	if wbuf.Len() > 0 {
+		info.Type |= ComputerTypeData
+		info.Data = wbuf.Bytes()
+		info.Off = this.FileSize - int64(wbuf.Len())
+	}
+	info.Hash = file.Hash.Sum(nil)
+	return fn(info)
 }
 
 func (this *FileHashInfo) Open(hi *HashInfo) error {
@@ -264,6 +334,7 @@ func (this *FileHashInfo) Full() error {
 		}
 		fmd5.Write(buf[:rsiz])
 		acs := adler32.Checksum(buf[:rsiz])
+		hb.Idx = int(i)
 		hb.Len = int64(rsiz)
 		hb.Off = pos
 		hb.H1 = uint16((acs & 0xFFFF))
