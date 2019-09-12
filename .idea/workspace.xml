@@ -3,7 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="15f1a762-2e5f-4e8c-916a-eb9d90048f67" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dst.txt" beforeDir="false" afterPath="$PROJECT_DIR$/dst.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync_test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src.txt" beforeDir="false" afterPath="$PROJECT_DIR$/src.txt" afterDir="false" />

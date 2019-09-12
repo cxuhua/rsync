@@ -19,7 +19,7 @@ func TestBuffer(t *testing.T) {
 
 func TestGetFileHashBlock(t *testing.T) {
 	dst := "dst.txt"
-	df := NewFileHashInfo(4, dst)
+	df := NewFileHashInfo(DefaultBlockSize, dst)
 	if err := df.Open(nil); err != nil {
 		panic(err)
 	}
@@ -27,13 +27,8 @@ func TestGetFileHashBlock(t *testing.T) {
 	if err := df.Full(); err != nil {
 		panic(err)
 	}
-	b, err := df.ReadBlock(0)
-	if err != nil {
-		panic(err)
-	}
-	log.Println(b, df)
-	hi := df.GetHashInfo()
 
+	hi := df.GetHashInfo()
 	log.Println(hi)
 
 	src := "src.txt"
@@ -42,8 +37,8 @@ func TestGetFileHashBlock(t *testing.T) {
 		panic(err)
 	}
 	defer sf.Close()
-	if err := sf.ComputeHash(func(info *ComputerInfo) error {
-		log.Println("idx = ", info.BlockIdx, "date = ", string(info.Data), "hash= ", info.Hash, "off = ", info.Off, " type = ", info.Type)
+	if err := sf.Analyse(func(info *AnalyseInfo) error {
+		log.Println("idx = ", info.Index, "date = ", len(info.Data), "hash= ", info.Hash, "off = ", info.Off, " type = ", info.Type)
 		return nil
 	}); err != nil {
 		panic(err)

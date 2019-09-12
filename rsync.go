@@ -56,7 +56,6 @@ type HashInfo struct {
 	Blocks    []HashBlock //block info
 	MD5       []byte      //file md5
 	BlockSize int         //block size
-	FileSize  int64       //file size
 }
 
 func (this *HashInfo) PassH1(o int, h uint32) (int, bool) {
@@ -154,7 +153,6 @@ func (this *FileHashInfo) GetHashInfo() *HashInfo {
 		Blocks:    []HashBlock{},
 		MD5:       this.MD5,
 		BlockSize: this.BlockSize,
-		FileSize:  this.FileSize,
 	}
 	for _, v := range this.Blocks {
 		ret.Blocks = append(ret.Blocks, v.Clone())
@@ -169,42 +167,50 @@ func (this *FileHashInfo) GetHashInfo() *HashInfo {
 }
 
 const (
-	ComputerTypeData  = 1
-	ComputerTypeIndex = 2
-	ComputerTypeHash  = 3
+	ComputerTypeData  = 1 //data
+	ComputerTypeIndex = 2 //index
+	ComputerTypeClose = 4 //hash
+	ComputerTypeOpen  = 8 //off=filesize
 )
 
-type ComputerInfo struct {
+type AnalyseInfo struct {
 	HashFile *FileHashInfo //file info
-	BlockIdx int           // >= 0 map to blocks
+	Index    int           // >= 0 map to blocks
 	Off      int64
 	Data     []byte // len > 0 has new data
 	Type     int    // &1  idx start, = &2 computer stop &4 = data
 	Hash     []byte
 }
 
-func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
+func (this *FileHashInfo) CheckPass(buf []byte, h12 uint32) int {
+	o, b := this.Info.PassH1(0, h12)
+	if !b {
+		return -1
+	}
+	o, b = this.Info.PassH2(o, h12)
+	if !b {
+		return -2
+	}
+	h3 := md5.Sum(buf)
+	o, b = this.Info.PassH3(o, h3)
+	if !b {
+		return -3
+	}
+	return this.Info.Blocks[o].Idx
+}
+
+func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 	if this.Info == nil {
 		return errors.New("info nil")
 	}
 	if this.File == nil {
 		return errors.New("file not open")
 	}
-	checkPass := func(buf []byte, h12 uint32) int {
-		o, b := this.Info.PassH1(0, h12)
-		if !b {
-			return -1
-		}
-		o, b = this.Info.PassH2(o, h12)
-		if !b {
-			return -2
-		}
-		h3 := md5.Sum(buf)
-		o, b = this.Info.PassH3(o, h3)
-		if !b {
-			return -3
-		}
-		return this.Info.Blocks[o].Idx
+	info := &AnalyseInfo{HashFile: this}
+	info.Type = ComputerTypeOpen
+	info.Off = this.FileSize
+	if err := fn(info); err != nil {
+		return err
 	}
 	rbuf := bytes.NewBuffer(nil)
 	wbuf := bytes.NewBuffer(nil)
@@ -217,11 +223,11 @@ func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
 			return err
 		} else if _, err := adler.Write(one); err != nil {
 			return err
-		} else if idx := checkPass(rbuf.Bytes(), adler.Sum32()); idx >= 0 {
+		} else if idx := this.CheckPass(rbuf.Bytes(), adler.Sum32()); idx >= 0 {
 			adler.Reset()
-			info := &ComputerInfo{HashFile: this}
+			info := &AnalyseInfo{HashFile: this}
 			info.Type = ComputerTypeIndex
-			info.BlockIdx = idx
+			info.Index = idx
 			if wbuf.Len() > 0 {
 				info.Data = wbuf.Bytes()
 				info.Type |= ComputerTypeData
@@ -246,7 +252,7 @@ func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
 			rbuf.Reset()
 		}
 		if wbuf.Len() >= this.BlockSize {
-			info := &ComputerInfo{HashFile: this}
+			info := &AnalyseInfo{HashFile: this}
 			info.Type = ComputerTypeData
 			info.Data = wbuf.Bytes()
 			info.Off = foff - int64(wbuf.Len()-1)
@@ -259,14 +265,14 @@ func (this *FileHashInfo) ComputeHash(fn func(info *ComputerInfo) error) error {
 	if _, err := wbuf.Write(rbuf.Bytes()); err != nil {
 		return err
 	}
-	info := &ComputerInfo{HashFile: this}
-	info.Type = ComputerTypeHash
+	info = &AnalyseInfo{HashFile: this}
+	info.Type = ComputerTypeClose
+	info.Hash = file.Hash.Sum(nil)
 	if wbuf.Len() > 0 {
 		info.Type |= ComputerTypeData
 		info.Data = wbuf.Bytes()
 		info.Off = this.FileSize - int64(wbuf.Len())
 	}
-	info.Hash = file.Hash.Sum(nil)
 	return fn(info)
 }
 
