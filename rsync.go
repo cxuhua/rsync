@@ -167,10 +167,10 @@ func (this *FileHashInfo) GetHashInfo() *HashInfo {
 }
 
 const (
-	ComputerTypeData  = 1 //data
-	ComputerTypeIndex = 2 //index
-	ComputerTypeClose = 4 //hash
-	ComputerTypeOpen  = 8 //off=filesize
+	AnalyseTypeData  = 1 //data
+	AnalyseTypeIndex = 2 //index
+	AnalyseTypeClose = 4 //hash
+	AnalyseTypeOpen  = 8 //off=filesize
 )
 
 type AnalyseInfo struct {
@@ -207,7 +207,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		return errors.New("file not open")
 	}
 	info := &AnalyseInfo{HashFile: this}
-	info.Type = ComputerTypeOpen
+	info.Type = AnalyseTypeOpen
 	info.Off = this.FileSize
 	if err := fn(info); err != nil {
 		return err
@@ -226,11 +226,11 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		} else if idx := this.CheckPass(rbuf.Bytes(), adler.Sum32()); idx >= 0 {
 			adler.Reset()
 			info := &AnalyseInfo{HashFile: this}
-			info.Type = ComputerTypeIndex
+			info.Type = AnalyseTypeIndex
 			info.Index = idx
 			if wbuf.Len() > 0 {
 				info.Data = wbuf.Bytes()
-				info.Type |= ComputerTypeData
+				info.Type |= AnalyseTypeData
 			}
 			info.Off = foff - int64(wbuf.Len()+rbuf.Len()-1)
 			if err := fn(info); err != nil {
@@ -253,7 +253,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		}
 		if wbuf.Len() >= this.BlockSize {
 			info := &AnalyseInfo{HashFile: this}
-			info.Type = ComputerTypeData
+			info.Type = AnalyseTypeData
 			info.Data = wbuf.Bytes()
 			info.Off = foff - int64(wbuf.Len()-1)
 			if err := fn(info); err != nil {
@@ -266,10 +266,10 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		return err
 	}
 	info = &AnalyseInfo{HashFile: this}
-	info.Type = ComputerTypeClose
+	info.Type = AnalyseTypeClose
 	info.Hash = file.Hash.Sum(nil)
 	if wbuf.Len() > 0 {
-		info.Type |= ComputerTypeData
+		info.Type |= AnalyseTypeData
 		info.Data = wbuf.Bytes()
 		info.Off = this.FileSize - int64(wbuf.Len())
 	}

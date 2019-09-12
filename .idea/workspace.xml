@@ -5,7 +5,6 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src.txt" beforeDir="false" afterPath="$PROJECT_DIR$/src.txt" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -56,7 +55,18 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Go Test.TestGetFileHashBlock in rsync">
+  <component name="RunManager" selected="Go Test.TestAnalyse in rsync">
+    <configuration name="TestAnalyse in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="rsync" />
+      <working_directory value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="rsync" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestAnalyse$" />
+      <method v="2" />
+    </configuration>
     <configuration name="TestBuffer in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="rsync" />
       <working_directory value="$PROJECT_DIR$" />
@@ -81,6 +91,7 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Go Test.TestAnalyse in rsync" />
         <item itemvalue="Go Test.TestGetFileHashBlock in rsync" />
         <item itemvalue="Go Test.TestBuffer in rsync" />
       </list>

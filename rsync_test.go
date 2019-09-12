@@ -17,7 +17,7 @@ func TestBuffer(t *testing.T) {
 
 }
 
-func TestGetFileHashBlock(t *testing.T) {
+func TestAnalyse(t *testing.T) {
 	dst := "dst.txt"
 	df := NewFileHashInfo(DefaultBlockSize, dst)
 	if err := df.Open(nil); err != nil {
