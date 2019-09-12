@@ -331,11 +331,11 @@ func (this *FileHashInfo) Full() error {
 	pos := int64(0)
 	for i := int64(0); i < this.Count; i++ {
 		hb := HashBlock{}
-		rsiz := this.BlockSize
-		if this.FileSize-pos < int64(rsiz) {
-			rsiz = int(this.FileSize - pos)
+		if _, err := this.File.Seek(pos, io.SeekStart); err != nil {
+			return fmt.Errorf("seek file error: %v", err)
 		}
-		if err := this.read(pos, int(rsiz), buf); err != nil {
+		rsiz, err := this.File.Read(buf)
+		if err != nil {
 			return fmt.Errorf("read file error: %v", err)
 		}
 		fmd5.Write(buf[:rsiz])
