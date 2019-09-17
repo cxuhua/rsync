@@ -355,13 +355,14 @@ func (this *FileHashInfo) String() string {
 	return strings.Join(s, "\n")
 }
 
-func NewFileHashInfo(bsiz int, file string) *FileHashInfo {
-	if bsiz == 0 {
-		bsiz = DefaultBlockSize
+func NewFileHashInfo(file string, bsiz ...int) *FileHashInfo {
+	siz := DefaultBlockSize
+	if len(bsiz) > 0 {
+		siz = bsiz[0]
 	}
 	return &FileHashInfo{
 		Blocks:    []HashBlock{},
-		BlockSize: bsiz,
+		BlockSize: siz,
 		Path:      file,
 	}
 }

@@ -1,23 +1,13 @@
 package rsync
 
 import (
-	"bytes"
 	"log"
 	"testing"
 )
 
-func TestBuffer(t *testing.T) {
-	b := bytes.NewBuffer(nil)
-	b.Write([]byte{1, 2, 3})
-	b.Read([]byte{0})
-	log.Println(b.Bytes())
-	b.Write([]byte{4})
-	log.Println(b.Bytes())
-}
-
 func TestAnalyse(t *testing.T) {
 	dst := "dst.txt"
-	df := NewFileHashInfo(10, dst)
+	df := NewFileHashInfo(dst)
 	if err := df.Open(nil); err != nil {
 		panic(err)
 	}
@@ -30,7 +20,7 @@ func TestAnalyse(t *testing.T) {
 	log.Println(hi)
 
 	src := "src.txt"
-	sf := NewFileHashInfo(hi.BlockSize, src)
+	sf := NewFileHashInfo(src, hi.BlockSize)
 	if err := sf.Open(hi); err != nil {
 		panic(err)
 	}
