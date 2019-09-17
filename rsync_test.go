@@ -1,25 +1,30 @@
 package rsync
 
 import (
-	"bytes"
 	"log"
 	"testing"
 )
 
 func TestBuffer(t *testing.T) {
 
-	b := bytes.NewBuffer(nil)
-	b.Write([]byte{1, 2, 3})
-	b.Read([]byte{0})
-	log.Println(b.Bytes())
-	b.Write([]byte{4})
-	log.Println(b.Bytes())
+	b := HashBlock{}
+	b.H3[0] = 1
+	b.H3[1] = 2
+	b.H3[2] = 3
+	b.H3[3] = 4
 
+	c := b
+
+	log.Println(c)
+
+	b.H3[0] = 0
+
+	log.Println(c)
 }
 
-func TestGetFileHashBlock(t *testing.T) {
+func TestAnalyse(t *testing.T) {
 	dst := "dst.txt"
-	df := NewFileHashInfo(DefaultBlockSize, dst)
+	df := NewFileHashInfo(dst)
 	if err := df.Open(nil); err != nil {
 		panic(err)
 	}
@@ -27,23 +32,18 @@ func TestGetFileHashBlock(t *testing.T) {
 	if err := df.Full(); err != nil {
 		panic(err)
 	}
-	b, err := df.ReadBlock(0)
-	if err != nil {
-		panic(err)
-	}
-	log.Println(b, df)
-	hi := df.GetHashInfo()
 
+	hi := df.GetHashInfo()
 	log.Println(hi)
 
 	src := "src.txt"
-	sf := NewFileHashInfo(hi.BlockSize, src)
+	sf := NewFileHashInfo(src, hi.BlockSize)
 	if err := sf.Open(hi); err != nil {
 		panic(err)
 	}
 	defer sf.Close()
-	if err := sf.ComputeHash(func(info *ComputerInfo) error {
-		log.Println("idx = ", info.BlockIdx, "off = ", info.Off)
+	if err := sf.Analyse(func(info *AnalyseInfo) error {
+		log.Println("idx = ", info.Index, "date = ", len(info.Data), "hash= ", info.Hash, "off = ", info.Off, " type = ", info.Type)
 		return nil
 	}); err != nil {
 		panic(err)
