@@ -10,7 +10,6 @@ import (
 	"hash/adler32"
 	"io"
 	"os"
-	"sort"
 	"strings"
 )
 
@@ -25,17 +24,6 @@ type HashBlock struct {
 	H3  [md5.Size]byte //md5 sum
 	Len int64          //block data len
 	Off int64          //block offset
-}
-
-func (this HashBlock) Clone() HashBlock {
-	ret := HashBlock{}
-	ret.Idx = this.Idx
-	ret.H1 = this.H1
-	ret.H2 = this.H2
-	copy(ret.H3[:], this.H3[:])
-	ret.Len = this.Len
-	ret.Off = this.Off
-	return ret
 }
 
 func (this HashBlock) String() string {
@@ -58,40 +46,63 @@ type HashInfo struct {
 	BlockSize int         //block size
 }
 
-func (this *HashInfo) PassH1(o int, h uint32) (int, bool) {
+type HashMap map[uint16][]HashBlock
+
+func (this HashMap) PassH1(h uint32) (int, bool) {
 	h1 := uint16(h & 0xFFFF)
-	l := len(this.Blocks)
-	for i := o; i < l; i++ {
-		v := this.Blocks[i]
+	hs, ok := this[h1]
+	if !ok {
+		return 0, false
+	}
+	for _, v := range hs {
 		if v.H1 == h1 {
-			return i, true
+			return v.Idx, true
 		}
 	}
 	return 0, false
 }
 
-func (this *HashInfo) PassH2(o int, h uint32) (int, bool) {
+func (this HashMap) PassH2(h uint32) (int, bool) {
 	h1 := uint16(h & 0xFFFF)
 	h2 := uint16((h >> 16) & 0xFFFF)
-	l := len(this.Blocks)
-	for i := o; i < l; i++ {
-		v := this.Blocks[i]
+	hs, ok := this[h1]
+	if !ok {
+		return 0, false
+	}
+	for _, v := range hs {
 		if v.H1 == h1 && v.H2 == h2 {
-			return i, true
+			return v.Idx, true
 		}
 	}
 	return 0, false
 }
 
-func (this *HashInfo) PassH3(o int, h [md5.Size]byte) (int, bool) {
-	l := len(this.Blocks)
-	for i := o; i < l; i++ {
-		v := this.Blocks[i]
-		if bytes.Equal(v.H3[:], h[:]) {
-			return i, true
+func (this HashMap) PassH3(h uint32, mv [md5.Size]byte) (int, bool) {
+	h1 := uint16(h & 0xFFFF)
+	h2 := uint16((h >> 16) & 0xFFFF)
+	hs, ok := this[h1]
+	if !ok {
+		return 0, false
+	}
+	for _, v := range hs {
+		if v.H1 == h1 && v.H2 == h2 && bytes.Equal(v.H3[:], mv[:]) {
+			return v.Idx, true
 		}
 	}
 	return 0, false
+}
+
+func (this *HashInfo) GetMap() HashMap {
+	m := HashMap{}
+	for _, v := range this.Blocks {
+		hs, ok := m[v.H1]
+		if !ok {
+			hs = []HashBlock{}
+			m[v.H1] = hs
+		}
+		hs = append(hs, v)
+	}
+	return m
 }
 
 type FileReader struct {
@@ -149,28 +160,18 @@ type FileHashInfo struct {
 }
 
 func (this *FileHashInfo) GetHashInfo() *HashInfo {
-	ret := &HashInfo{
-		Blocks:    []HashBlock{},
+	return &HashInfo{
+		Blocks:    this.Blocks,
 		MD5:       this.MD5,
 		BlockSize: this.BlockSize,
 	}
-	for _, v := range this.Blocks {
-		ret.Blocks = append(ret.Blocks, v.Clone())
-	}
-	sort.Slice(ret.Blocks, func(i, j int) bool {
-		if ret.Blocks[i].H1 == ret.Blocks[j].H1 {
-			return ret.Blocks[i].H2 < ret.Blocks[j].H2
-		}
-		return ret.Blocks[i].H1 < ret.Blocks[j].H1
-	})
-	return ret
 }
 
 const (
-	AnalyseTypeData  = 1 //data
-	AnalyseTypeIndex = 2 //index
-	AnalyseTypeClose = 4 //hash
-	AnalyseTypeOpen  = 8 //off=filesize
+	AnalyseTypeOpen  = 1 << 0 //off=filesize
+	AnalyseTypeData  = 1 << 1 //data
+	AnalyseTypeIndex = 1 << 2 //index
+	AnalyseTypeClose = 1 << 3 //hash
 )
 
 type AnalyseInfo struct {
@@ -182,17 +183,17 @@ type AnalyseInfo struct {
 	Hash     []byte
 }
 
-func (this *FileHashInfo) CheckPass(buf []byte, h12 uint32) int {
-	o, b := this.Info.PassH1(0, h12)
+func (this *FileHashInfo) CheckPass(mp HashMap, buf []byte, h12 uint32) int {
+	o, b := mp.PassH1(h12)
 	if !b {
 		return -1
 	}
-	o, b = this.Info.PassH2(o, h12)
+	o, b = mp.PassH2(h12)
 	if !b {
 		return -2
 	}
 	h3 := md5.Sum(buf)
-	o, b = this.Info.PassH3(o, h3)
+	o, b = mp.PassH3(h12, h3)
 	if !b {
 		return -3
 	}
@@ -212,6 +213,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 	if err := fn(info); err != nil {
 		return err
 	}
+	mp := this.Info.GetMap()
 	rbuf := bytes.NewBuffer(nil)
 	wbuf := bytes.NewBuffer(nil)
 	adler := adler32.New()
@@ -223,7 +225,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			return err
 		} else if _, err := adler.Write(one); err != nil {
 			return err
-		} else if idx := this.CheckPass(rbuf.Bytes(), adler.Sum32()); idx >= 0 {
+		} else if idx := this.CheckPass(mp, rbuf.Bytes(), adler.Sum32()); idx >= 0 {
 			adler.Reset()
 			info := &AnalyseInfo{HashFile: this}
 			info.Type = AnalyseTypeIndex
@@ -321,14 +323,15 @@ func (this *FileHashInfo) Full() error {
 		if err != nil {
 			return fmt.Errorf("read file error: %v", err)
 		}
-		fmd5.Write(buf[:rsiz])
-		acs := adler32.Checksum(buf[:rsiz])
+		dat := buf[:rsiz]
+		fmd5.Write(dat)
+		acs := adler32.Checksum(dat)
 		hb.Idx = int(i)
 		hb.Len = int64(rsiz)
 		hb.Off = pos
 		hb.H1 = uint16((acs & 0xFFFF))
 		hb.H2 = uint16(((acs >> 16) & 0xFFFF))
-		hb.H3 = md5.Sum(buf[:rsiz])
+		hb.H3 = md5.Sum(dat)
 		this.Blocks = append(this.Blocks, hb)
 		pos += int64(rsiz)
 	}
