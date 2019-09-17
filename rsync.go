@@ -368,10 +368,11 @@ func (this *AnalyseInfo) IsIndex() bool {
 	return this.Type&AnalyseTypeIndex != 0
 }
 
-func (this *FileHashInfo) CheckPass(mp HashMap, buf []byte, h12 uint32) int {
+func (this *FileHashInfo) CheckPass(mp HashMap, buf []byte, hh hash.Hash32) int {
 	if len(buf) < this.BlockSize {
 		return -4
 	}
+	h12 := hh.Sum32()
 	o, b := mp.PassH1(h12)
 	if !b {
 		return -1
@@ -431,7 +432,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			return err
 		} else if _, err := adler.Write(one); err != nil {
 			return err
-		} else if idx := this.CheckPass(mp, rbuf.Bytes(), adler.Sum32()); idx >= 0 {
+		} else if idx := this.CheckPass(mp, rbuf.Bytes(), adler); idx >= 0 {
 			adler.Reset()
 			info := &AnalyseInfo{HashFile: this}
 			info.Type = AnalyseTypeIndex
