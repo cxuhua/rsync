@@ -3,14 +3,12 @@ package rsync
 import (
 	"bytes"
 	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
 	"hash/adler32"
 	"io"
 	"os"
-	"strings"
 )
 
 const (
@@ -22,12 +20,8 @@ type HashBlock struct {
 	H1  uint16         //adler32 low  = (hash & 0xFFFF)
 	H2  uint16         //adler32 high = ((hash > 16) & 0xFFFF)
 	H3  [md5.Size]byte //md5 sum
-	Len int64          //block data len
+	Len int            //block data len
 	Off int64          //block offset
-}
-
-func (this HashBlock) String() string {
-	return fmt.Sprintf("IDX=%d H1=%.4X H2=%.4X H3=%s Len=%d Off=%d", this.Idx, this.H1, this.H2, hex.EncodeToString(this.H3[:]), this.Len, this.Off)
 }
 
 func HashBlockEqual(b1 HashBlock, b2 HashBlock) bool {
@@ -95,27 +89,204 @@ func (this HashMap) PassH3(h uint32, mv [md5.Size]byte) (int, bool) {
 func (this *HashInfo) GetMap() HashMap {
 	m := HashMap{}
 	for _, v := range this.Blocks {
-		hs, ok := m[v.H1]
-		if !ok {
-			hs = []HashBlock{}
-			m[v.H1] = hs
-		}
-		hs = append(hs, v)
+		m[v.H1] = append(m[v.H1], v)
 	}
 	return m
+}
+
+func (this *HashInfo) IsEmpty() bool {
+	l := len(this.Blocks)
+	if l == 0 {
+		return true
+	}
+	if l == 1 && this.Blocks[0].Len < this.BlockSize {
+		return true
+	}
+	return false
+}
+
+type FileMerger struct {
+	WFile *os.File
+	RFile *os.File
+	Size  int64
+	Path  string
+	Hash  hash.Hash
+	Info  *HashInfo
+}
+
+func (this *FileMerger) doOpen(hi *AnalyseInfo) error {
+	return this.open(hi.Off)
+}
+
+func (this *FileMerger) doClose(hi *AnalyseInfo) error {
+	mv := this.Hash.Sum(nil)
+	if !bytes.Equal(mv[:], hi.Hash) {
+		return errors.New("hash error")
+	}
+	if err := this.attach(); err != nil {
+		return err
+	}
+	this.Close()
+	return nil
+}
+
+func (this *FileMerger) doData(hi *AnalyseInfo) error {
+	if num, err := this.Hash.Write(hi.Data); err != nil {
+		return err
+	} else if num != len(hi.Data) {
+		return fmt.Errorf("write hash data num error: index = %d", hi.Index)
+	}
+	if num, err := this.WFile.Write(hi.Data); err != nil {
+		return err
+	} else if num != len(hi.Data) {
+		return fmt.Errorf("write file data num error: index = %d", hi.Index)
+	}
+	return nil
+}
+
+func (this *FileMerger) ReadBlock(b *HashBlock) ([]byte, error) {
+	if this.RFile == nil {
+		return nil, errors.New("not found file : " + this.Path)
+	}
+	data := make([]byte, b.Len)
+	if _, err := this.RFile.Seek(b.Off, io.SeekStart); err != nil {
+		return nil, err
+	}
+	if num, err := this.RFile.Read(data); err != nil {
+		return nil, err
+	} else if num != len(data) {
+		return nil, fmt.Errorf("read file data num error: index = %d", b.Idx)
+	}
+	return data, nil
+}
+
+func (this *FileMerger) doIndex(hi *AnalyseInfo) error {
+	if hi.Index < 0 || hi.Index >= len(this.Info.Blocks) {
+		return errors.New("block index out bound")
+	}
+	b := this.Info.Blocks[hi.Index]
+	data, err := this.ReadBlock(&b)
+	if err != nil {
+		return err
+	}
+	if num, err := this.Hash.Write(data); err != nil {
+		return err
+	} else if num != len(data) {
+		return fmt.Errorf("write hash data num error: index = %d", hi.Index)
+	}
+	if num, err := this.WFile.Write(data); err != nil {
+		return err
+	} else if num != len(data) {
+		return fmt.Errorf("write file data num error: index = %d", hi.Index)
+	}
+	return nil
+}
+
+func (this *FileMerger) Write(hi *AnalyseInfo) error {
+	var err error = nil
+	if hi.IsOpen() {
+		err = this.doOpen(hi)
+	}
+	if err != nil {
+		return err
+	}
+	if hi.IsData() {
+		err = this.doData(hi)
+	}
+	if err != nil {
+		return err
+	}
+	if hi.IsIndex() {
+		err = this.doIndex(hi)
+	}
+	if err != nil {
+		return err
+	}
+	if hi.IsClose() {
+		err = this.doClose(hi)
+	}
+	return err
+}
+
+func (this *FileMerger) open(siz int64) error {
+	this.Size = siz
+	tmp := this.Path + ".tmp"
+	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_APPEND|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	this.WFile = file
+	file, err = os.OpenFile(this.Path, os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		this.RFile = nil
+	} else {
+		this.RFile = file
+	}
+	return nil
+}
+
+func (this *FileMerger) attach() error {
+	if this.RFile != nil {
+		this.RFile.Close()
+		this.RFile = nil
+		if err := os.Remove(this.Path); err != nil {
+			return err
+		}
+	}
+	if this.WFile != nil {
+		this.WFile.Close()
+		this.WFile = nil
+	}
+	tmp := this.Path + ".tmp"
+	return os.Rename(tmp, this.Path)
+}
+
+func (this *FileMerger) Close() {
+	if this.RFile != nil {
+		this.RFile.Close()
+		this.RFile = nil
+	}
+	if this.WFile != nil {
+		this.WFile.Close()
+		this.WFile = nil
+	}
+}
+
+func NewFileMerger(file string, hi *HashInfo) *FileMerger {
+	return &FileMerger{
+		Path: file,
+		Hash: md5.New(),
+		Info: hi,
+	}
 }
 
 type FileReader struct {
 	File *os.File
 	Size int
+	Off  int64
 	Buf  *bytes.Buffer
 	Hash hash.Hash
 }
 
+func (this *FileReader) Truncate(size int) error {
+	if size == 0 {
+		return nil
+	}
+	buf := make([]byte, size)
+	num, err := this.Buf.Read(buf)
+	if err != nil {
+		return err
+	}
+	this.Off += int64(num)
+	return nil
+}
+
 func (this *FileReader) Read(offset int64) ([]byte, error) {
 	one := []byte{0}
-	n, err := this.Buf.Read(one)
-	if err == nil && n == 1 {
+	ds := this.Buf.Bytes()
+	idx := int(offset - this.Off)
+	if idx >= 0 && idx < len(ds) {
+		one[0] = ds[idx]
 		return one, nil
 	}
 	if _, err := this.File.Seek(offset, io.SeekStart); err != nil {
@@ -129,8 +300,9 @@ func (this *FileReader) Read(offset int64) ([]byte, error) {
 	} else if _, err := this.Hash.Write(buf[:num]); err != nil {
 		return nil, err
 	}
-	n, err = this.Buf.Read(one)
-	if err == nil && n == 1 {
+	ds = this.Buf.Bytes()
+	if len(ds) > 0 {
+		one[0] = ds[idx]
 		return one, nil
 	}
 	return nil, io.EOF
@@ -177,13 +349,29 @@ const (
 type AnalyseInfo struct {
 	HashFile *FileHashInfo //file info
 	Index    int           // >= 0 map to blocks
-	Off      int64
-	Data     []byte // len > 0 has new data
-	Type     int    // &1  idx start, = &2 computer stop &4 = data
-	Hash     []byte
+	Off      int64         //
+	Data     []byte        // len > 0 has new data
+	Type     int           // AnalyseType*
+	Hash     []byte        //
+}
+
+func (this *AnalyseInfo) IsOpen() bool {
+	return this.Type&AnalyseTypeOpen != 0
+}
+func (this *AnalyseInfo) IsData() bool {
+	return this.Type&AnalyseTypeData != 0
+}
+func (this *AnalyseInfo) IsClose() bool {
+	return this.Type&AnalyseTypeClose != 0
+}
+func (this *AnalyseInfo) IsIndex() bool {
+	return this.Type&AnalyseTypeIndex != 0
 }
 
 func (this *FileHashInfo) CheckPass(mp HashMap, buf []byte, h12 uint32) int {
+	if len(buf) < this.BlockSize {
+		return -4
+	}
 	o, b := mp.PassH1(h12)
 	if !b {
 		return -1
@@ -219,6 +407,24 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 	adler := adler32.New()
 	file := NewFileReader(this.File, this.BlockSize)
 	for foff := int64(0); foff < this.FileSize; foff++ {
+		if this.Info.IsEmpty() {
+			buf := make([]byte, this.BlockSize)
+			num, err := this.File.Read(buf)
+			if err != nil {
+				return err
+			}
+			if _, err := file.Hash.Write(buf[:num]); err != nil {
+				return err
+			}
+			info := &AnalyseInfo{HashFile: this}
+			info.Type = AnalyseTypeData
+			info.Data = buf[:num]
+			foff += int64(num)
+			if err := fn(info); err != nil {
+				return err
+			}
+			continue
+		}
 		if one, err := file.Read(foff); err != nil {
 			return err
 		} else if _, err := rbuf.Write(one); err != nil {
@@ -238,6 +444,9 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			if err := fn(info); err != nil {
 				return err
 			}
+			if err := file.Truncate(wbuf.Len() + rbuf.Len()); err != nil {
+				return err
+			}
 			wbuf.Reset()
 			rbuf.Reset()
 			continue
@@ -245,12 +454,13 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		if rbuf.Len() >= this.BlockSize {
 			one := []byte{0}
 			adler.Reset()
-			if num, err := rbuf.Read(one); err != nil {
-				return err
-			} else if _, err := wbuf.Write(one[:num]); err != nil {
+			foff -= int64(rbuf.Len() - 1)
+			if _, err := rbuf.Read(one); err != nil {
 				return err
 			}
-			foff -= int64(this.BlockSize - 1)
+			if _, err := wbuf.Write(one); err != nil {
+				return err
+			}
 			rbuf.Reset()
 		}
 		if wbuf.Len() >= this.BlockSize {
@@ -259,6 +469,9 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			info.Data = wbuf.Bytes()
 			info.Off = foff - int64(wbuf.Len()-1)
 			if err := fn(info); err != nil {
+				return err
+			}
+			if err := file.Truncate(wbuf.Len()); err != nil {
 				return err
 			}
 			wbuf.Reset()
@@ -275,31 +488,30 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		info.Data = wbuf.Bytes()
 		info.Off = this.FileSize - int64(wbuf.Len())
 	}
+	if err := file.Truncate(wbuf.Len()); err != nil {
+		return err
+	}
 	return fn(info)
 }
 
-func (this *FileHashInfo) Open(hi *HashInfo) error {
-	this.Info = hi
-	if this.Info != nil {
-		this.BlockSize = hi.BlockSize
-	}
+func (this *FileHashInfo) Open() error {
 	if this.BlockSize == 0 {
 		return errors.New("block size error")
 	}
 	fs, err := os.Stat(this.Path)
 	if err != nil {
-		return fmt.Errorf("file stat error: %v", err)
+		return nil
 	}
 	this.FileSize = fs.Size()
 	if this.FileSize == 0 {
-		return errors.New("file size == 0")
+		return nil
 	}
 	if this.FileSize%int64(this.BlockSize) == 0 {
 		this.Count = (this.FileSize / int64(this.BlockSize))
 	} else {
 		this.Count = (this.FileSize / int64(this.BlockSize)) + 1
 	}
-	fd, err := os.OpenFile(this.Path, os.O_RDONLY, 0)
+	fd, err := os.OpenFile(this.Path, os.O_RDONLY, os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("open file error: %v", err)
 	}
@@ -307,7 +519,10 @@ func (this *FileHashInfo) Open(hi *HashInfo) error {
 	return nil
 }
 
-func (this *FileHashInfo) Full() error {
+func (this *FileHashInfo) FillHashInfo() error {
+	if this.FileSize == 0 {
+		return nil
+	}
 	if this.File == nil {
 		return errors.New("file not open")
 	}
@@ -327,7 +542,7 @@ func (this *FileHashInfo) Full() error {
 		fmd5.Write(dat)
 		acs := adler32.Checksum(dat)
 		hb.Idx = int(i)
-		hb.Len = int64(rsiz)
+		hb.Len = rsiz
 		hb.Off = pos
 		hb.H1 = uint16((acs & 0xFFFF))
 		hb.H2 = uint16(((acs >> 16) & 0xFFFF))
@@ -346,23 +561,28 @@ func (this *FileHashInfo) Close() {
 	}
 }
 
-func (this *FileHashInfo) String() string {
-	s := []string{"\n", this.Path}
-	for i, v := range this.Blocks {
-		s = append(s, fmt.Sprintf("%.5d: %s", i, v.String()))
-	}
-	s = append(s, fmt.Sprintf("File MD5=%s SIZE=%d COUNT=%d", hex.EncodeToString(this.MD5), this.FileSize, this.Count))
-	return strings.Join(s, "\n")
-}
-
-func NewFileHashInfo(file string, bsiz ...int) *FileHashInfo {
-	siz := DefaultBlockSize
-	if len(bsiz) > 0 {
-		siz = bsiz[0]
-	}
-	return &FileHashInfo{
+func NewFileHashInfo(file string, arg ...interface{}) *FileHashInfo {
+	ret := &FileHashInfo{
 		Blocks:    []HashBlock{},
-		BlockSize: siz,
+		BlockSize: DefaultBlockSize,
 		Path:      file,
 	}
+	var iv interface{} = nil
+	if len(arg) == 1 {
+		iv = arg[0]
+	}
+	switch iv.(type) {
+	case int:
+		{
+			ret.BlockSize = iv.(int)
+		}
+	case *HashInfo:
+		{
+			ret.Info = iv.(*HashInfo)
+			ret.BlockSize = ret.Info.BlockSize
+		}
+	default:
+		return ret
+	}
+	return ret
 }
