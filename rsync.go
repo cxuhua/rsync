@@ -16,12 +16,10 @@ const (
 )
 
 type HashBlock struct {
-	Idx int            //last block size
+	Idx int
 	H1  uint16         //adler32 low  = (hash & 0xFFFF)
 	H2  uint16         //adler32 high = ((hash > 16) & 0xFFFF)
 	H3  [md5.Size]byte //md5 sum
-	Len int            //block data len
-	Off int64          //block offset
 }
 
 func HashBlockEqual(b1 HashBlock, b2 HashBlock) bool {
@@ -95,14 +93,7 @@ func (this *HashInfo) GetMap() HashMap {
 }
 
 func (this *HashInfo) IsEmpty() bool {
-	l := len(this.Blocks)
-	if l == 0 {
-		return true
-	}
-	if l == 1 && this.Blocks[0].Len < this.BlockSize {
-		return true
-	}
-	return false
+	return len(this.Blocks) == 0
 }
 
 type FileMerger struct {
@@ -148,8 +139,8 @@ func (this *FileMerger) ReadBlock(b *HashBlock) ([]byte, error) {
 	if this.RFile == nil {
 		return nil, errors.New("not found file : " + this.Path)
 	}
-	data := make([]byte, b.Len)
-	if _, err := this.RFile.Seek(b.Off, io.SeekStart); err != nil {
+	data := make([]byte, this.Info.BlockSize)
+	if _, err := this.RFile.Seek(int64(b.Idx*this.Info.BlockSize), io.SeekStart); err != nil {
 		return nil, err
 	}
 	if num, err := this.RFile.Read(data); err != nil {
@@ -422,11 +413,9 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			info.Data = buf[:num]
 			foff += int64(num)
 			if err := fn(info); err != nil {
-				return err
+				return fn(info)
 			}
-			continue
-		}
-		if one, err := file.Read(foff); err != nil {
+		} else if one, err := file.Read(foff); err != nil {
 			return err
 		} else if _, err := rbuf.Write(one); err != nil {
 			return err
@@ -489,9 +478,6 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 		info.Data = wbuf.Bytes()
 		info.Off = this.FileSize - int64(wbuf.Len())
 	}
-	if err := file.Truncate(wbuf.Len()); err != nil {
-		return err
-	}
 	return fn(info)
 }
 
@@ -529,27 +515,28 @@ func (this *FileHashInfo) FillHashInfo() error {
 	}
 	fmd5 := md5.New()
 	buf := make([]byte, this.BlockSize)
-	pos := int64(0)
 	for i := int64(0); i < this.Count; i++ {
 		hb := HashBlock{}
-		if _, err := this.File.Seek(pos, io.SeekStart); err != nil {
+		if _, err := this.File.Seek(i*int64(this.BlockSize), io.SeekStart); err != nil {
 			return fmt.Errorf("seek file error: %v", err)
 		}
 		rsiz, err := this.File.Read(buf)
 		if err != nil {
 			return fmt.Errorf("read file error: %v", err)
 		}
+		if rsiz != this.BlockSize {
+			break
+		}
 		dat := buf[:rsiz]
-		fmd5.Write(dat)
+		if _, err := fmd5.Write(dat); err != nil {
+			return fmt.Errorf("md5 write error: %v", err)
+		}
 		acs := adler32.Checksum(dat)
 		hb.Idx = int(i)
-		hb.Len = rsiz
-		hb.Off = pos
 		hb.H1 = uint16((acs & 0xFFFF))
 		hb.H2 = uint16(((acs >> 16) & 0xFFFF))
 		hb.H3 = md5.Sum(dat)
 		this.Blocks = append(this.Blocks, hb)
-		pos += int64(rsiz)
 	}
 	this.MD5 = fmd5.Sum(nil)
 	return nil

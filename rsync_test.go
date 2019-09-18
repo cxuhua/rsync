@@ -8,7 +8,7 @@ import (
 
 func TestAnalyse(t *testing.T) {
 	dst := "dst.txt"
-	df := NewFileHashInfo(dst, 6)
+	df := NewFileHashInfo(dst, 3)
 	if err := df.Open(); err != nil {
 		panic(err)
 	}
