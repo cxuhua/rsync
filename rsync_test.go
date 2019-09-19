@@ -5,21 +5,18 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"log"
-	"os"
 	"testing"
+
+	"github.com/gofrs/flock"
 )
 
 func TestR(t *testing.T) {
-	file, err := os.OpenFile("aaa.txt", os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
-	err = os.Rename("aaa.txt", "bbb.txt")
-	if err != nil {
-		panic(err)
-	}
-	_, err = file.Write([]byte("fukc"))
-	file.Close()
+	f := flock.New("aa.lck")
+	defer f.Close()
+	locked, err := f.TryLock()
+	locked, err = f.TryLock()
+	log.Println(err, locked)
+	f.Unlock()
 }
 
 func TestHashBlockRW(t *testing.T) {

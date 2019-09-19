@@ -12,7 +12,8 @@ import (
 	"log"
 	"os"
 	"sort"
-	"syscall"
+
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -230,12 +231,13 @@ func (this *HashInfo) IsEmpty() bool {
 }
 
 type FileMerger struct {
-	WFile *os.File
-	RFile *os.File
-	Size  int64
-	Path  string
-	Hash  hash.Hash
-	Info  *HashInfo
+	WFile  *os.File
+	RFile  *os.File
+	Size   int64
+	Path   string
+	Hash   hash.Hash
+	Info   *HashInfo
+	Locker *flock.Flock
 }
 
 func (this *FileMerger) doOpen(hi *AnalyseInfo) error {
@@ -333,29 +335,15 @@ func (this *FileMerger) Write(hi *AnalyseInfo) error {
 	return err
 }
 
-func FileIsLocked(path string) bool {
-	file, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
-		return true
-	}
-	return false
-}
-
 func (this *FileMerger) Open() error {
-	tmp := this.Path + ".tmp"
-	if FileIsLocked(tmp) {
+	if this.Locker.Locked() {
 		return errors.New("file locked")
 	}
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_APPEND|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	file, err := os.OpenFile(this.Path+".tmp", os.O_CREATE|os.O_APPEND|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		return err
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := this.Locker.Lock(); err != nil {
 		return err
 	}
 	this.WFile = file
@@ -374,14 +362,11 @@ func (this *FileMerger) attach() error {
 		this.RFile = nil
 		os.Remove(this.Path)
 	}
-	if err := os.Rename(this.Path+".tmp", this.Path); err != nil {
-		return err
-	}
 	if this.WFile != nil {
 		this.WFile.Close()
 		this.WFile = nil
 	}
-	return nil
+	return os.Rename(this.Path+".tmp", this.Path)
 }
 
 func (this *FileMerger) Close() {
@@ -393,13 +378,19 @@ func (this *FileMerger) Close() {
 		this.WFile.Close()
 		this.WFile = nil
 	}
+	if this.Locker != nil {
+		this.Locker.Close()
+		os.Remove(this.Locker.Path())
+		this.Locker = nil
+	}
 }
 
 func NewFileMerger(file string, hi *HashInfo) *FileMerger {
 	return &FileMerger{
-		Path: file,
-		Hash: md5.New(),
-		Info: hi,
+		Path:   file,
+		Hash:   md5.New(),
+		Info:   hi,
+		Locker: flock.New(file + ".lck"),
 	}
 }
 
