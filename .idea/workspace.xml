@@ -2,19 +2,13 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="15f1a762-2e5f-4e8c-916a-eb9d90048f67" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/$CACHE_FILE$" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/rsync.iml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/watcherTasks.xml" beforeDir="false" />
+      <change afterPath="$PROJECT_DIR$/transport_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dst.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsync_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/rsync_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src.txt" beforeDir="false" afterPath="$PROJECT_DIR$/src.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/transport.go" beforeDir="false" afterPath="$PROJECT_DIR$/transport.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,7 +50,7 @@
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
     <property name="nodejs_package_manager_path" value="npm" />
-    <property name="settings.editor.selected.configurable" value="watcher.settings" />
+    <property name="settings.editor.selected.configurable" value="go.vgo" />
   </component>
   <component name="RunDashboard">
     <option name="ruleStates">
@@ -70,7 +64,18 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Go Test.TestAnalyse in rsync">
+  <component name="RunManager" selected="Go Test.TestAnalyse in rsync (1)">
+    <configuration name="TestAnalyse in rsync (1)" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="rsync" />
+      <working_directory value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="rsync" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestAnalyse$" />
+      <method v="2" />
+    </configuration>
     <configuration name="TestAnalyse in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="rsync" />
       <working_directory value="$PROJECT_DIR$" />
@@ -82,7 +87,7 @@
       <pattern value="^TestAnalyse$" />
       <method v="2" />
     </configuration>
-    <configuration name="TestHashBlockRW in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+    <configuration name="TestHttp2 in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="rsync" />
       <working_directory value="$PROJECT_DIR$" />
       <framework value="gotest" />
@@ -90,10 +95,21 @@
       <package value="rsync" />
       <directory value="$PROJECT_DIR$/" />
       <filePath value="$PROJECT_DIR$/" />
-      <pattern value="^TestHashBlockRW$" />
+      <pattern value="^TestHttp2$" />
       <method v="2" />
     </configuration>
-    <configuration name="TestTT in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+    <configuration name="TestHttp2 in transport_test.go" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="rsync" />
+      <working_directory value="$PROJECT_DIR$" />
+      <framework value="gotest" />
+      <kind value="FILE" />
+      <package value="rsync" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/transport_test.go" />
+      <pattern value="^TestHttp2$" />
+      <method v="2" />
+    </configuration>
+    <configuration name="TestLock in rsync" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
       <module name="rsync" />
       <working_directory value="$PROJECT_DIR$" />
       <framework value="gotest" />
@@ -101,14 +117,16 @@
       <package value="rsync" />
       <directory value="$PROJECT_DIR$/" />
       <filePath value="$PROJECT_DIR$/" />
-      <pattern value="^TestTT$" />
+      <pattern value="^TestLock$" />
       <method v="2" />
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Go Test.TestAnalyse in rsync (1)" />
+        <item itemvalue="Go Test.TestLock in rsync" />
+        <item itemvalue="Go Test.TestHttp2 in transport_test.go" />
+        <item itemvalue="Go Test.TestHttp2 in rsync" />
         <item itemvalue="Go Test.TestAnalyse in rsync" />
-        <item itemvalue="Go Test.TestHashBlockRW in rsync" />
-        <item itemvalue="Go Test.TestTT in rsync" />
       </list>
     </recent_temporary>
   </component>
@@ -137,8 +155,12 @@
     <state x="268" y="156" key="#GOROOT/1920.1080/1920.1080" />
     <state x="552" y="181" key="#Inspections" />
     <state x="552" y="181" key="#Inspections/1920.1080/1920.1080" />
+    <state x="675" y="171" key="#TestHttp2_in_rsync" />
+    <state x="675" y="171" key="#TestHttp2_in_rsync/1920.1080/1920.1080" />
     <state x="414" y="176" key="#com.intellij.execution.impl.EditConfigurationsDialog" />
     <state x="414" y="176" key="#com.intellij.execution.impl.EditConfigurationsDialog/1920.1080/1920.1080" />
+    <state x="743" y="193" key="FileChooserDialogImpl" />
+    <state x="743" y="193" key="FileChooserDialogImpl/1920.1080/1920.1080" />
     <state width="1877" height="377" key="GridCell.Tab.0.bottom" />
     <state width="1877" height="377" key="GridCell.Tab.0.bottom/1920.1080/1920.1080" />
     <state width="1877" height="377" key="GridCell.Tab.0.center" />
@@ -155,19 +177,10 @@
     <state width="1877" height="337" key="GridCell.Tab.1.left/1920.1080/1920.1080" />
     <state width="1877" height="337" key="GridCell.Tab.1.right" />
     <state width="1877" height="337" key="GridCell.Tab.1.right/1920.1080/1920.1080" />
+    <state x="540" y="266" key="IDE.errors.dialog" />
+    <state x="540" y="266" key="IDE.errors.dialog/1920.1080/1920.1080" />
     <state x="254" y="233" key="SettingsEditor" />
     <state x="254" y="233" key="SettingsEditor/1920.1080/1920.1080" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
-          <url>file://$PROJECT_DIR$/rsync_test.go</url>
-          <line>45</line>
-          <option name="timeStamp" value="9" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/rsync$TestGetFileHashBlock_in_rsync.out" NAME="TestGetFileHashBlock in rsync Coverage Results" MODIFIED="1568199495844" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="GoCoverage" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" />

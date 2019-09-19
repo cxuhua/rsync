@@ -55,9 +55,11 @@ func TestAnalyse(t *testing.T) {
 	if !HashInfoEqual(hi, hh) {
 		t.Error("HashInfoEqual error")
 	}
-
 	//
-	mp := NewFileMerger(dst, hi)
+	mp, err := NewFileMerger(dst, hi)
+	if err != nil {
+		panic(err)
+	}
 	defer mp.Close()
 
 	src := "src.txt"
