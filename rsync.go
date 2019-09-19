@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"syscall"
 )
 
 const (
@@ -238,7 +239,11 @@ type FileMerger struct {
 }
 
 func (this *FileMerger) doOpen(hi *AnalyseInfo) error {
-	return this.open(hi.Off)
+	this.Size = hi.Off
+	if this.WFile == nil {
+		return errors.New("file not open")
+	}
+	return nil
 }
 
 func (this *FileMerger) doClose(hi *AnalyseInfo) error {
@@ -328,19 +333,29 @@ func (this *FileMerger) Write(hi *AnalyseInfo) error {
 	return err
 }
 
-//func LockFile(f *os.File) error {
-//	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-//}
-//
-//func UnlockFile(f *os.File) error {
-//	return syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-//}
+func FileIsLocked(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		return true
+	}
+	return false
+}
 
-func (this *FileMerger) open(siz int64) error {
-	this.Size = siz
+func (this *FileMerger) Open() error {
 	tmp := this.Path + ".tmp"
+	if FileIsLocked(tmp) {
+		return errors.New("file locked")
+	}
 	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_APPEND|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
 	if err != nil {
+		return err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return err
 	}
 	this.WFile = file
@@ -357,16 +372,16 @@ func (this *FileMerger) attach() error {
 	if this.RFile != nil {
 		this.RFile.Close()
 		this.RFile = nil
-		if err := os.Remove(this.Path); err != nil {
-			return err
-		}
+		os.Remove(this.Path)
+	}
+	if err := os.Rename(this.Path+".tmp", this.Path); err != nil {
+		return err
 	}
 	if this.WFile != nil {
 		this.WFile.Close()
 		this.WFile = nil
 	}
-	tmp := this.Path + ".tmp"
-	return os.Rename(tmp, this.Path)
+	return nil
 }
 
 func (this *FileMerger) Close() {
@@ -380,13 +395,12 @@ func (this *FileMerger) Close() {
 	}
 }
 
-func NewFileMerger(file string, hi *HashInfo) (*FileMerger, error) {
-	f := &FileMerger{
+func NewFileMerger(file string, hi *HashInfo) *FileMerger {
+	return &FileMerger{
 		Path: file,
 		Hash: md5.New(),
 		Info: hi,
 	}
-	return f, nil
 }
 
 type FileReader struct {

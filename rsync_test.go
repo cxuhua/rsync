@@ -5,8 +5,22 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"log"
+	"os"
 	"testing"
 )
+
+func TestR(t *testing.T) {
+	file, err := os.OpenFile("aaa.txt", os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+	err = os.Rename("aaa.txt", "bbb.txt")
+	if err != nil {
+		panic(err)
+	}
+	_, err = file.Write([]byte("fukc"))
+	file.Close()
+}
 
 func TestHashBlockRW(t *testing.T) {
 	mv := [md5.Size]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
@@ -56,8 +70,8 @@ func TestAnalyse(t *testing.T) {
 		t.Error("HashInfoEqual error")
 	}
 	//
-	mp, err := NewFileMerger(dst, hi)
-	if err != nil {
+	mp := NewFileMerger(dst, hi)
+	if err = mp.Open(); err != nil {
 		panic(err)
 	}
 	defer mp.Close()
