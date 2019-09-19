@@ -46,6 +46,28 @@ func touint16(b []byte) uint16 {
 	return uint16(b[0]) | uint16(b[1])<<8
 }
 
+func tobyte64(v uint64) []byte {
+	ret := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	ret[0] = byte(v & 0xFF)
+	ret[1] = byte(v >> 8 & 0xFF)
+	ret[2] = byte(v >> 16 & 0xFF)
+	ret[3] = byte(v >> 24 & 0xFF)
+	ret[4] = byte(v >> 32 & 0xFF)
+	ret[5] = byte(v >> 40 & 0xFF)
+	ret[6] = byte(v >> 48 & 0xFF)
+	ret[7] = byte(v >> 56 & 0xFF)
+	return ret
+}
+
+func touint64(b []byte) uint64 {
+	if len(b) != 8 {
+		panic(errors.New("b error"))
+	}
+	v := uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24
+	v |= uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
+	return v
+}
+
 func tobyte32(v uint32) []byte {
 	ret := []byte{0, 0, 0, 0}
 	ret[0] = byte(v & 0xFF)
@@ -62,7 +84,7 @@ func touint32(b []byte) uint32 {
 	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 }
 
-func (this *HashBlock) Read(idx uint32, buf *bytes.Buffer) error {
+func (this *HashBlock) Read(idx uint32, buf io.Reader) error {
 	this.Idx = idx
 	b1 := []byte{0, 0}
 	if _, err := buf.Read(b1); err != nil {
@@ -84,7 +106,7 @@ func (this *HashBlock) Read(idx uint32, buf *bytes.Buffer) error {
 	return nil
 }
 
-func (this HashBlock) Write(buf *bytes.Buffer) error {
+func (this HashBlock) Write(buf io.Writer) error {
 	if _, err := buf.Write(tobyte16(this.H1)); err != nil {
 		return err
 	}
@@ -116,29 +138,29 @@ type HashInfo struct {
 	BlockSize uint16      //block size
 }
 
-func (this *HashInfo) Read(buf *bytes.Buffer) error {
-	if buf.Len() == 0 {
-		return nil
-	}
+func (this *HashInfo) Read(buf io.Reader) error {
 	if len(this.MD5) != md5.Size {
 		this.MD5 = make([]byte, md5.Size)
 	}
 	if _, err := buf.Read(this.MD5); err != nil {
 		return err
 	}
-	bb := []byte{0, 0}
-	if _, err := buf.Read(bb); err != nil {
+	b2 := []byte{0, 0}
+	b4 := []byte{0, 0, 0, 0}
+	if _, err := buf.Read(b2); err != nil {
 		return err
 	}
-	this.BlockSize = touint16(bb)
-	idx := uint32(0)
-	for buf.Len() > 0 {
+	this.BlockSize = touint16(b2)
+	if _, err := buf.Read(b4); err != nil {
+		return err
+	}
+	num := touint32(b4)
+	for i := uint32(0); i < num; i++ {
 		b := &HashBlock{}
-		if err := b.Read(idx, buf); err != nil {
+		if err := b.Read(i, buf); err != nil {
 			return err
 		}
 		this.Blocks = append(this.Blocks, *b)
-		idx++
 	}
 	return nil
 }
@@ -149,17 +171,20 @@ func (this *HashInfo) ToBuffer() (*bytes.Buffer, error) {
 	return buf, err
 }
 
-func (this *HashInfo) Write(buf *bytes.Buffer) error {
+func (this *HashInfo) Write(buf io.Writer) error {
 	if this.MD5 == nil {
 		return nil
 	}
 	if _, err := buf.Write(this.MD5); err != nil {
 		return err
 	}
-	if err := buf.WriteByte(byte(this.BlockSize & 0xFF)); err != nil {
+	if _, err := buf.Write([]byte{byte(this.BlockSize & 0xFF)}); err != nil {
 		return err
 	}
-	if err := buf.WriteByte(byte(this.BlockSize >> 8 & 0xFF)); err != nil {
+	if _, err := buf.Write([]byte{byte(this.BlockSize >> 8 & 0xFF)}); err != nil {
+		return err
+	}
+	if _, err := buf.Write(tobyte32(uint32(len(this.Blocks)))); err != nil {
 		return err
 	}
 	for _, v := range this.Blocks {
@@ -178,7 +203,7 @@ func NewHashInfo() *HashInfo {
 	}
 }
 
-func NewHashInfoWithBuf(buf *bytes.Buffer) (*HashInfo, error) {
+func NewHashInfoWithBuf(buf io.Reader) (*HashInfo, error) {
 	h := NewHashInfo()
 	return h, h.Read(buf)
 }
@@ -509,19 +534,95 @@ func HashInfoEqual(h1 *HashInfo, h2 *HashInfo) bool {
 }
 
 const (
-	AnalyseTypeOpen  = 1 << 0 //off=filesize
-	AnalyseTypeData  = 1 << 1 //data
-	AnalyseTypeIndex = 1 << 2 //index
-	AnalyseTypeClose = 1 << 3 //hash
+	AnalyseTypeOpen  = 1 << 0 //off=filesize 1+8
+	AnalyseTypeData  = 1 << 1 //data 1+datalen
+	AnalyseTypeIndex = 1 << 2 //index 1 + 4
+	AnalyseTypeClose = 1 << 3 //hash 1 + 16
 )
 
 type AnalyseInfo struct {
-	HashFile *FileHashInfo //file info
-	Index    uint32        // >= 0 map to blocks
-	Off      int64         //
-	Data     []byte        // len > 0 has new data
-	Type     int           // AnalyseType*
-	Hash     []byte        //
+	Index uint32 // >= 0 map to blocks
+	Off   int64  //
+	Data  []byte // len > 0 has new data
+	Type  int    // AnalyseType*
+	Hash  []byte //
+}
+
+func (this *AnalyseInfo) Read(buf io.Reader) error {
+	b1 := []byte{0}
+	b2 := []byte{0, 0}
+	b4 := []byte{0, 0, 0, 0}
+	b8 := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	_, err := buf.Read(b1)
+	if err != nil {
+		return err
+	}
+	this.Type = int(uint(b1[0]))
+	if this.IsOpen() {
+		if _, err := buf.Read(b8); err != nil {
+			return err
+		}
+		this.Off = int64(touint64(b8))
+	}
+	if this.IsData() {
+		if _, err := buf.Read(b2); err != nil {
+			return err
+		}
+		len := touint16(b2)
+		this.Data = make([]byte, len)
+		if _, err := buf.Read(this.Data); err != nil {
+			return err
+		}
+	}
+	if this.IsIndex() {
+		if _, err := buf.Read(b4); err != nil {
+			return err
+		}
+		this.Index = touint32(b4)
+	}
+	if this.IsClose() {
+		this.Hash = make([]byte, md5.Size)
+		if _, err := buf.Read(this.Hash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (this *AnalyseInfo) Write(buf io.Writer) error {
+	if _, err := buf.Write([]byte{byte(this.Type)}); err != nil {
+		return err
+	}
+	if this.IsOpen() {
+		//file length
+		if _, err := buf.Write(tobyte64(uint64(this.Off))); err != nil {
+			return err
+		}
+	}
+	if this.IsData() {
+		//data len
+		len := uint16(len(this.Data))
+		if _, err := buf.Write(tobyte16(len)); err != nil {
+			return err
+		}
+		//data body
+		if _, err := buf.Write(this.Data); err != nil {
+			return err
+		}
+	}
+	if this.IsIndex() {
+		//index 32
+		if _, err := buf.Write(tobyte32(this.Index)); err != nil {
+			return err
+		}
+	}
+	if this.IsClose() {
+		//hash
+		if _, err := buf.Write(this.Hash); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (this *AnalyseInfo) IsOpen() bool {
@@ -565,7 +666,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 	if this.File == nil {
 		return errors.New("file not open")
 	}
-	info := &AnalyseInfo{HashFile: this}
+	info := &AnalyseInfo{}
 	info.Type = AnalyseTypeOpen
 	info.Off = this.FileSize
 	if err := fn(info); err != nil {
@@ -589,7 +690,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			if _, err := file.Hash.Write(buf[:num]); err != nil {
 				return err
 			}
-			info := &AnalyseInfo{HashFile: this}
+			info := &AnalyseInfo{}
 			info.Type = AnalyseTypeData
 			info.Data = buf[:num]
 			foff += int64(num - 1)
@@ -604,7 +705,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			return err
 		} else if idx, ok := this.CheckPass(mp, rbuf.Bytes(), adler); ok {
 			adler.Reset()
-			info := &AnalyseInfo{HashFile: this}
+			info := &AnalyseInfo{}
 			info.Type = AnalyseTypeIndex
 			info.Index = idx
 			if wbuf.Len() > 0 {
@@ -635,7 +736,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 			rbuf.Reset()
 		}
 		if wbuf.Len() >= int(this.BlockSize) {
-			info := &AnalyseInfo{HashFile: this}
+			info := &AnalyseInfo{}
 			info.Type = AnalyseTypeData
 			info.Data = wbuf.Bytes()
 			info.Off = foff - int64(wbuf.Len()-1)
@@ -651,7 +752,7 @@ func (this *FileHashInfo) Analyse(fn func(info *AnalyseInfo) error) error {
 	if _, err := wbuf.Write(rbuf.Bytes()); err != nil {
 		return err
 	}
-	info = &AnalyseInfo{HashFile: this}
+	info = &AnalyseInfo{}
 	info.Type = AnalyseTypeClose
 	info.Hash = file.Hash.Sum(nil)
 	if wbuf.Len() > 0 {

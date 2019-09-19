@@ -47,7 +47,7 @@ func TestAnalyse(t *testing.T) {
 
 	hi, err := GetFileHashInfo(dst, func(b *HashBlock) {
 		log.Println("HashBlock idx = ", b.Idx)
-	}, DefaultBlockSize)
+	}, 4)
 	if err != nil {
 		panic(err)
 	}
@@ -67,19 +67,30 @@ func TestAnalyse(t *testing.T) {
 		t.Error("HashInfoEqual error")
 	}
 	//
-	mp := NewFileMerger(dst, hi)
+	mp := NewFileMerger(dst, hh)
 	if err = mp.Open(); err != nil {
 		panic(err)
 	}
 	defer mp.Close()
 
 	src := "src.txt"
-	sf := NewFileHashInfo(src, hi)
+	sf := NewFileHashInfo(src, hh)
 	if err := sf.Open(); err != nil {
 		panic(err)
 	}
 	defer sf.Close()
-	if err := sf.Analyse(func(info *AnalyseInfo) error {
+
+	abuf := &bytes.Buffer{}
+
+	if err := sf.Analyse(func(ai *AnalyseInfo) error {
+		abuf.Reset()
+		if err := ai.Write(abuf); err != nil {
+			return err
+		}
+		info := &AnalyseInfo{}
+		if err := info.Read(abuf); err != nil {
+			return err
+		}
 		log.Println("idx = ", info.Index, "data = ", len(info.Data), "hash= ", hex.EncodeToString(info.Hash), "off = ", info.Off, " type = ", info.Type)
 		return mp.Write(info)
 	}); err != nil {
