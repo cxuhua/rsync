@@ -250,7 +250,6 @@ func (this *FileMerger) doClose(hi *AnalyseInfo) error {
 	if err := this.attach(); err != nil {
 		return err
 	}
-	this.Close()
 	return nil
 }
 
@@ -329,6 +328,14 @@ func (this *FileMerger) Write(hi *AnalyseInfo) error {
 	return err
 }
 
+//func LockFile(f *os.File) error {
+//	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+//}
+//
+//func UnlockFile(f *os.File) error {
+//	return syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+//}
+
 func (this *FileMerger) open(siz int64) error {
 	this.Size = siz
 	tmp := this.Path + ".tmp"
@@ -373,12 +380,13 @@ func (this *FileMerger) Close() {
 	}
 }
 
-func NewFileMerger(file string, hi *HashInfo) *FileMerger {
-	return &FileMerger{
+func NewFileMerger(file string, hi *HashInfo) (*FileMerger, error) {
+	f := &FileMerger{
 		Path: file,
 		Hash: md5.New(),
 		Info: hi,
 	}
+	return f, nil
 }
 
 type FileReader struct {
