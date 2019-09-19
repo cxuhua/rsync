@@ -53,13 +53,13 @@ func TestAnalyse(t *testing.T) {
 	}
 
 	//test read write
-	buf := &bytes.Buffer{}
-	if err := hi.Write(buf); err != nil {
+	buf, err := hi.ToBuffer()
+	if err != nil {
 		panic(err)
 	}
 
-	hh := NewHashInfo()
-	if err := hh.Read(buf); err != nil {
+	hh, err := NewHashInfoWithBuf(buf)
+	if err != nil {
 		panic(err)
 	}
 

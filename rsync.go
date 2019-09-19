@@ -143,6 +143,12 @@ func (this *HashInfo) Read(buf *bytes.Buffer) error {
 	return nil
 }
 
+func (this *HashInfo) ToBuffer() (*bytes.Buffer, error) {
+	buf := &bytes.Buffer{}
+	err := this.Write(buf)
+	return buf, err
+}
+
 func (this *HashInfo) Write(buf *bytes.Buffer) error {
 	if this.MD5 == nil {
 		return nil
@@ -170,6 +176,11 @@ func NewHashInfo() *HashInfo {
 		MD5:       nil,
 		BlockSize: 0,
 	}
+}
+
+func NewHashInfoWithBuf(buf *bytes.Buffer) (*HashInfo, error) {
+	h := NewHashInfo()
+	return h, h.Read(buf)
 }
 
 type HashMap map[uint16][]HashBlock
@@ -335,8 +346,12 @@ func (this *FileMerger) Write(hi *AnalyseInfo) error {
 	return err
 }
 
+func (this *FileMerger) IsLocked() bool {
+	return this.Locker.Locked()
+}
+
 func (this *FileMerger) Open() error {
-	if this.Locker.Locked() {
+	if this.IsLocked() {
 		return errors.New("file locked")
 	}
 	file, err := os.OpenFile(this.Path+".tmp", os.O_CREATE|os.O_APPEND|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
@@ -357,15 +372,7 @@ func (this *FileMerger) Open() error {
 }
 
 func (this *FileMerger) attach() error {
-	if this.RFile != nil {
-		this.RFile.Close()
-		this.RFile = nil
-		os.Remove(this.Path)
-	}
-	if this.WFile != nil {
-		this.WFile.Close()
-		this.WFile = nil
-	}
+	this.Close()
 	return os.Rename(this.Path+".tmp", this.Path)
 }
 
